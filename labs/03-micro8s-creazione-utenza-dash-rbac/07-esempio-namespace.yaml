@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: pluto
+
+# lo yaml si applica con
+# microk8s kubectl apply -f 07-esempio-namespace.yaml
+
+# l'apply dello yaml corrisponde esattamente al comando imperativo:
+# microk8s kubectl create namespace pluto
