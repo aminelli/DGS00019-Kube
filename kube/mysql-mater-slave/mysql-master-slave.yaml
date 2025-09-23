@@ -1,0 +1,189 @@
+# ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysql-config
+  namespace: mysql-test
+data:
+  master.cnf: |
+    [mysqld]
+    log-bin=mysql-bin
+    server-id=1
+    binlog_do_db=mydb
+  
+  slave.cnf: |
+    [mysqld]
+    server-id=2
+    relay-log=relay-log
+---
+# Secret 
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mysql-secret
+  namespace: mysql-test
+type: Opaque
+data:
+  # valori crittografati in base 64
+  # esempio per un base64: echo -n "password" | openssl dgst -sha256 -binary | openssl base64
+  root-password: cGFzc3dvcmQ=   # "password" in base64
+  repl-user: cmVwbA==           # "repl"
+  repl-password: cmVwbHB3ZA==   # "replpwd"
+---
+# Master Deployment
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql-master
+  namespace: mysql-test
+spec:
+  serviceName: "mysql-master"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql
+      role: master
+  template:
+    labels:
+      app: mysql
+      role: master
+    spec:
+      containers:
+        - name: mysql
+          image: mysql:8.0
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-secret
+                  key: root-password
+            - name: MYSQL_DATABASE
+              value: mydb
+          volumeMounts:
+            - name: config
+              mountPath: /etc/mysql/conf.d
+            - name: data
+              mountPath: /var/lib/mysql
+          
+      volumes:
+        - name: config
+          configMap:
+            name: mysql-config
+            items:
+              - key: master.cnf
+                path: master.cnf
+
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 1Gi            
+---
+# Slave's Deployment    
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql-slave
+  namespace: mysql-test
+spec:
+  serviceName: mysql-slave
+  replicas: 2
+  selector:
+    matchLabels:
+      app: mysql
+      role: slave
+  template:
+    metadata:
+      labels:
+        app: mysql
+        role: slave  
+    spec:
+      containers:
+        - name: mysql
+          image: mysql:8.0
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-secret
+                  key: root-password
+          volumeMounts:
+            - name: config
+              mountPath: /etc/mysql/conf.d
+            - name: data
+              mountPath: /var/lib/mysql
+      volumes:
+        - name: config
+          configMap:
+            name: mysql-config
+            items:
+              - key: slave.cnf
+                path: slave.cnf
+      initContainers:
+        - name: init-slave
+          image: mysql:8.0
+          command:
+          - /bin/sh
+          - -c
+          - |
+            echo "Aspettando che il master sia pronto..."
+            until mysql -h mysql-master -u root -p "$MYSQL_ROOT_PASSWORD" -e "SELECT 1"; do
+              sleep 20
+            done
+
+            echo "Recupero posizione del master..."
+            STATUS=$(mysql -h mysql-master -u root -p "$MYSQL_ROOT_PASSWORD" -e "SHOW MASTER STATUS\G")
+            FILE=$(echo "$STATUS" | grep File | awk '{print $2}')
+            POS=$(echo "$STATUS" | grep Position | awk '{print $2}')
+
+            echo "Configuro slave..."
+            mysql -u root -p "$MYSQL_ROOT_PASSWORD" -e "STOP SLAVE; RESET SLAVE ALL; \
+              CHANGE MASTER TO MASTER_HOST='mysql-master', \
+              MASTER_USER='$MYSQL_REPL_USER', \
+              MASTER_PASSWORD='$MYSQL_REPL_PASSWORD', \
+              MASTER_LOG_FILE='$FILE', \
+              MASTER_LOG_POS=$POS; \
+              START SLAVE;"
+
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 1Gi
+---
+# Master Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-master
+  namespace: mysql-test
+spec:
+  selector:
+    app: mysql
+    role: master
+  ports:
+    - port: 3306
+      # targetPort: 3306
+      protocol: TCP
+---
+# Slave Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-slave
+  namespace: mysql-test
+spec:
+  selector:
+    app: mysql
+    role: slave
+  ports:
+    - port: 3306
+      # targetPort: 3306
+      protocol: TCP
+    
