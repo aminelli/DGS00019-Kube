@@ -131,23 +131,39 @@ spec:
           - -c
           - |
             echo "Aspettando che il master sia pronto..."
-            until mysql -h mysql-master -u root -p "$MYSQL_ROOT_PASSWORD" -e "SELECT 1"; do
+            until mysql -h mysql-master -u root -p $MYSQL_ROOT_PASSWORD -e "SELECT 1"; do
               sleep 20
             done
 
             echo "Recupero posizione del master..."
-            STATUS=$(mysql -h mysql-master -u root -p "$MYSQL_ROOT_PASSWORD" -e "SHOW MASTER STATUS\G")
+            STATUS=$(mysql -h mysql-master -u root -p $MYSQL_ROOT_PASSWORD -e "SHOW MASTER STATUS\G")
             FILE=$(echo "$STATUS" | grep File | awk '{print $2}')
             POS=$(echo "$STATUS" | grep Position | awk '{print $2}')
 
             echo "Configuro slave..."
-            mysql -u root -p "$MYSQL_ROOT_PASSWORD" -e "STOP SLAVE; RESET SLAVE ALL; \
+            mysql -u root -p $MYSQL_ROOT_PASSWORD -e "STOP SLAVE; RESET SLAVE ALL; \
               CHANGE MASTER TO MASTER_HOST='mysql-master', \
               MASTER_USER='$MYSQL_REPL_USER', \
               MASTER_PASSWORD='$MYSQL_REPL_PASSWORD', \
               MASTER_LOG_FILE='$FILE', \
               MASTER_LOG_POS=$POS; \
               START SLAVE;"
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-secret
+                  key: root-password
+            - name: MYSQL_REPL_USER
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-secret
+                  key: repl-user
+            - name: MYSQL_REPL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-secret
+                  key: repl-password
 
   volumeClaimTemplates:
   - metadata:
