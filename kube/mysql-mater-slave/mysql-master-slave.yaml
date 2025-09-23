@@ -96,10 +96,9 @@ spec:
       app: mysql
       role: slave
   template:
-    metadata:
-      labels:
-        app: mysql
-        role: slave  
+    labels:
+      app: mysql
+      role: slave  
     spec:
       containers:
         - name: mysql
