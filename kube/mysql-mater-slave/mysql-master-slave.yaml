@@ -44,9 +44,10 @@ spec:
       app: mysql
       role: master
   template:
-    labels:
-      app: mysql
-      role: master
+    metadata:
+      labels:
+        app: mysql
+        role: master
     spec:
       containers:
         - name: mysql
@@ -96,9 +97,10 @@ spec:
       app: mysql
       role: slave
   template:
-    labels:
-      app: mysql
-      role: slave  
+    metadata:
+      labels:
+        app: mysql
+        role: slave  
     spec:
       containers:
         - name: mysql
