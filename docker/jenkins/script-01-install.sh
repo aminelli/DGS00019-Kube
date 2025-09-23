@@ -11,3 +11,5 @@ docker run \
     -p 50000:50000 \
     --restart=on-failure \
     jenkins/jenkins:lts-jdk17
+
+docker logs -f jenkins
